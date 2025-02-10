@@ -42,9 +42,3 @@ RMSE = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (y_i - \hat{y}_i)^2}
 \]
 Lower **RMSE** indicates a **better model**.
 
----
-
-## 🚀 **How to Run the Project**
-### **1️⃣ Install Dependencies**
-```bash
-pip install pandas numpy scikit-learn xgboost matplotlib seaborn
