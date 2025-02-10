@@ -1,1 +1,85 @@
+library(recipes)
+library(xgboost)
+all_features <- colnames(analysis_data)[colnames(analysis_data) != "CTR"]
 
+#excluding "CTR" in scoring data
+all_analysis_data = analysis_data[, all_features]
+all_scoring_data= scoring_data[, all_features[all_features != "CTR"]]
+# Save 'id' columns for submission
+scoring_ids=scoring_data$id
+
+# Recipe for preprocessing (handling unseen levels and missing values)
+rec <- recipe(CTR ~ ., data = analysis_data) %>%
+  step_novel(all_nominal(), -all_outcomes()) %>%
+  step_unknown(all_nominal(), -all_outcomes()) %>%
+  step_dummy(all_nominal(), -all_outcomes()) %>%
+  step_impute_median(all_numeric(), -all_outcomes()) %>%
+  prep()
+
+train_data = bake(rec, new_data = analysis_data)
+scoring_data_processed= bake(rec, new_data = scoring_data)
+
+# Exclude the target variable "CTR" from feature alignment
+train_feature_names <- setdiff(colnames(as.matrix(train_data)), "CTR")
+
+# Remove extra features from scoring data if any exist
+extra_features <- setdiff(colnames(as.matrix(scoring_data_processed)), train_feature_names)
+if (length(extra_features) > 0) {
+  scoring_data_processed <- scoring_data_processed[, !colnames(scoring_data_processed) %in% extra_features]
+}
+
+# Ensure that both datasets have the same columns in the same order, excluding CTR
+scoring_data_processed = scoring_data_processed[, train_feature_names]
+
+# Create matrix for XGBoost
+train_matrix= xgb.DMatrix(data = as.matrix(train_data[, train_feature_names]), label = train_data$CTR)
+scoring_matrix = xgb.DMatrix(data = as.matrix(scoring_data_processed))
+
+# Parameters for XGBoost
+params <- list(
+  objective = "reg:squarederror", # Regression objective
+  eta = 0.01,                     # Learning rate
+  max_depth = 6,                  # Maximum depth of a tree
+  subsample = 0.7,                # Subsample ratio of the training data
+  colsample_bytree = 0.7          # Subsample ratio of columns
+)
+
+# Train the initial XGBoost model
+set.seed(1031)
+xgb_model_all= xgb.train(params, train_matrix, nrounds = 1000, early_stopping_rounds = 10, watchlist = list(train = train_matrix))
+
+# Get feature importance
+importance_matrix = xgb.importance(feature_names = train_feature_names, model = xgb_model_all)
+
+print(importance_matrix)
+xgb.plot.importance(importance_matrix)
+# Define the top 5 features
+top_5_features <- c("visual_appeal", "targeting_score", "headline_length", 
+                    "body_sentiment", "body_readability_score")
+
+# Filter the training and scoring data
+train_data_top5 <- train_data[, c(top_5_features, "CTR")]
+scoring_data_top5 <- scoring_data_processed[, top_5_features]
+
+# Create DMatrix for XGBoost for the top 5 features
+train_matrix_top5 <- xgb.DMatrix(data = as.matrix(train_data_top5[, top_5_features]), label = train_data_top5$CTR)
+scoring_matrix_top5 <- xgb.DMatrix(data = as.matrix(scoring_data_top5))
+
+params <- list(
+  objective = "reg:squarederror",
+  eta = 0.01,
+  max_depth = 6,
+  subsample = 0.7,
+  colsample_bytree = 0.7
+)
+
+# Train the XGBoost model
+set.seed(1031)
+xgb_model_top5 <- xgb.train(params, train_matrix_top5, nrounds = 1000, early_stopping_rounds = 10, watchlist = list(train = train_matrix_top5))
+
+# Generate predictions on the scoring data
+predictions_top5 <- predict(xgb_model_top5, scoring_matrix_top5)
+
+# Create a submission file with 'id' and predicted CTR values
+submission_file_top5 <- data.frame(id = scoring_ids, CTR = predictions_top5)
+write.csv(submission_file_top5, 'submission_file_top5_features.csv', row.names = FALSE)
