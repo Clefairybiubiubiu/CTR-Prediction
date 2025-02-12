@@ -36,9 +36,3 @@ The goal is to develop a **machine learning model** that accurately predicts CTR
 - **Minimize RMSE (Root Mean Squared Error)** to improve ranking.  
 - **Apply machine learning techniques** to optimize model performance.  
 
-### 📌 **Evaluation Metric: RMSE**
-\[
-RMSE = \sqrt{\frac{1}{n} \sum_{i=1}^{n} (y_i - \hat{y}_i)^2}
-\]
-Lower **RMSE** indicates a **better model**.
-
